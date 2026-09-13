@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Thin curl wrapper for the Bubble Data API and Workflow API.
+# Reads BUBBLE_BASE_URL and BUBBLE_API_TOKEN from .env at the repo root.
+#
+# Usage:
+#   scripts/bubble meta                                   # exposed types + workflows
+#   scripts/bubble get <type> [query...]                  # list records; query = curl -G params
+#       e.g. get supportthread limit=10 cursor=0 'constraints=[{"key":"Slug","constraint_type":"equals","value":"x"}]'
+#   scripts/bubble get <type> <id>                        # one record
+#   scripts/bubble count <type> [query...]                # remaining+count only
+#   scripts/bubble post <type> '<json>'                   # create
+#   scripts/bubble patch <type> <id> '<json>'             # partial update
+#   scripts/bubble put <type> <id> '<json>'               # full replace
+#   scripts/bubble delete <type> <id>                     # delete
+#   scripts/bubble bulk <type> < records.ndjson           # bulk create (one JSON object per line)
+#   scripts/bubble wf <workflow> ['<json>']               # trigger an API workflow (POST)
+#   scripts/bubble raw <METHOD> <path> ['<json>']         # anything else under /api/1.1/
+#
+# Output is pretty-printed JSON when python3 is available.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$ROOT/.env" ]]; then
+  set -a; # shellcheck disable=SC1091
+  source "$ROOT/.env"; set +a
+fi
+: "${BUBBLE_BASE_URL:?Set BUBBLE_BASE_URL in .env}"
+: "${BUBBLE_API_TOKEN:?Set BUBBLE_API_TOKEN in .env}"
+
+API="${BUBBLE_BASE_URL%/}/api/1.1"
+AUTH=(-H "Authorization: Bearer $BUBBLE_API_TOKEN")
+
+pretty() {
+  if command -v python3 >/dev/null; then
+    python3 -c 'import json,sys
+raw=sys.stdin.read()
+try: print(json.dumps(json.loads(raw),indent=2,ensure_ascii=False))
+except Exception: print(raw)'
+  else cat; fi
+}
+
+# call METHOD PATH [JSON_BODY] [extra curl args...]
+call() {
+  local method="$1" path="$2"; shift 2
+  local body=""
+  if [[ $# -gt 0 && ( "$1" == \{* || "$1" == \[* ) ]]; then body="$1"; shift; fi
+  local args=(-sS -X "$method" "${AUTH[@]}" "$@")
+  [[ -n "$body" ]] && args+=(-H "Content-Type: application/json" --data "$body")
+  local out code
+  out="$(curl "${args[@]}" -w $'\n%{http_code}' "$API/$path")"
+  code="${out##*$'\n'}"; out="${out%$'\n'*}"
+  if [[ "$code" -ge 400 ]]; then
+    echo "HTTP $code" >&2; printf '%s\n' "$out" | pretty >&2; exit 1
+  fi
+  [[ -n "$out" ]] && printf '%s\n' "$out" | pretty || echo "HTTP $code (empty body)"
+}
+
+# GET with query params: getq PATH key=value...
+getq() {
+  local path="$1"; shift
+  local args=()
+  for kv in "$@"; do args+=(--data-urlencode "$kv"); done
+  call GET "$path" -G "${args[@]}"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  meta)   call GET meta ;;
+  get)
+    type="${1:?type}"; shift
+    if [[ $# -eq 1 && "$1" != *=* ]]; then call GET "obj/$type/$1"
+    else getq "obj/$type" "$@"; fi ;;
+  count)
+    type="${1:?type}"; shift
+    getq "obj/$type" limit=1 "$@" | python3 -c 'import json,sys; r=json.load(sys.stdin)["response"]; print(json.dumps({"count":r["count"],"remaining":r["remaining"],"total":r["count"]+r["remaining"]}))' ;;
+  post)   call POST   "obj/${1:?type}" "${2:?json}" ;;
+  patch)  call PATCH  "obj/${1:?type}/${2:?id}" "${3:?json}" ;;
+  put)    call PUT    "obj/${1:?type}/${2:?id}" "${3:?json}" ;;
+  delete) call DELETE "obj/${1:?type}/${2:?id}" ;;
+  bulk)   curl -sS -X POST "${AUTH[@]}" -H "Content-Type: text/plain" --data-binary @- "$API/obj/${1:?type}/bulk"; echo ;;
+  wf)     call POST "wf/${1:?workflow}" "${2:-{\}}" ;;
+  raw)    call "${1:?METHOD}" "${2:?path}" "${3:-}" ;;
+  ""|-h|--help|help) sed -n '2,20p' "$0" ;;
+  *) echo "unknown command: $cmd" >&2; sed -n '2,20p' "$0" >&2; exit 2 ;;
+esac

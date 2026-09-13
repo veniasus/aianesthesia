@@ -1,0 +1,5 @@
+# Secrets
+.env
+
+# Bubble app export — contains live API keys (OpenAI, Stripe, Bubble token). Never commit.
+bubble-export/
