@@ -1,0 +1,38 @@
+{
+  "type": "json_schema",
+  "name": "qbank_questions",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "questions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "question":   { "type": "string" },
+            "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+            "answer_options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "option":      { "type": "string" },
+                  "text":        { "type": "string" },
+                  "is_correct":  { "type": "boolean" },
+                  "explanation": { "type": "string" }
+                },
+                "required": ["option", "text", "is_correct", "explanation"]
+              }
+            }
+          },
+          "required": ["question", "difficulty", "answer_options"]
+        }
+      }
+    },
+    "required": ["questions"]
+  }
+}

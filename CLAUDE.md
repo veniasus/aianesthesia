@@ -26,3 +26,13 @@ a reference copy of its schema — the app itself lives in the Bubble editor.
 - `bubble-export/*.bubble` (gitignored) — raw app export. It contains live third-party
   secrets (OpenAI, Stripe) in `settings.secure`; never commit it or print that section.
   Refresh it from the Bubble editor → Settings → General → "Export application".
+
+## OpenAI migration (Assistants API → Responses API)
+
+- Context and the exact Bubble connector spec: `docs/response-api-migration.md`.
+- Reconstructed system prompts: `prompts/tutor.md`, `prompts/qbank.md` (+ `.escaped.txt`
+  one-liners for pasting into the connector), strict output schema `prompts/qbank-schema.json`.
+- `scripts/openai-flow.sh tutor|qbank "<input>"` runs the same HTTP calls Bubble makes,
+  end to end, using `OPENAI_API_KEY` from `.env`.
+- The old Assistants connector (`bTNor0`) stays in the app for reference; the new one is
+  named "Response API".
