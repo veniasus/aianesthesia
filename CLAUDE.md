@@ -38,3 +38,11 @@ a reference copy of its schema — the app itself lives in the Bubble editor.
   named "Response API".
 - Bubble editor edits are done via Playwright on branch **api-migration** (`version=03juz`);
   API Connector deep links: `tab=APIConnector&api_item=<apiId>-<callId>`; Response API id is `bTSes`.
+- **Bubble runtime gotcha:** an API-connector path with two list levels
+  (`body's data:first item's content:first item's text`) is accepted by the editor but returns
+  empty at runtime; only one list level resolves. Fetch the single item instead
+  (`Get Conversation Item` → `body's content:first item's text`). Details in
+  `docs/response-api-migration.md` §2a.
+- `wf_debug_items` (token-protected API workflow) doubles as a repair tool: POST
+  `{"session_id": "<Basic Question Session id>"}` re-runs *List Messages* for a session whose
+  OpenAI reply finished but never landed in Bubble (resets the user's `loading_stat`).

@@ -17,7 +17,7 @@ Everything below was verified live with the app's key via `scripts/openai-flow.s
 | Create a Thread → `thread_…` | **Create a Conversation** → `conv_…` |
 | Add Message + Create a Run → `run_…` | **Create a Response** (`background: true`) → `resp_…` |
 | Retrieve a Run → `status` | **Retrieve a Response** → `status` |
-| List Messages → first message text | **List Conversation Items** (`order=desc&limit=1`) → `data[0].content[0].text` |
+| List Messages → first message text | **List Conversation Items** (`order=desc&limit=1`) → `data[0].id`, then **Get Conversation Item** → `content[0].text` (see §2a) |
 
 Run status values: `queued` → `in_progress` → `completed` | `failed` | `incomplete` | `cancelled`.
 (Assistants used `queued`/`in_progress`/`completed`/`failed`/`expired`/`requires_action` — no `requires_action` any more.)
@@ -114,6 +114,43 @@ so the output always matches the `Objective (AI Qbank_new)` parser:
   **`body data:first item's content:first item's text`**
   (also `data:first item's role` = `assistant`, `status` = `completed`).
 
+### Call 6 — `Get Conversation Item`
+- Use as: **Action** · Data type: JSON · wrap_error on (id `bTShU0`)
+- `GET https://api.openai.com/v1/conversations/[conversation_id]/items/[item_id]`
+- Returns one item; the text is **`body's content:first item's text`** (one list level).
+
+---
+
+## 2a. Bubble runtime limitation: list-in-list paths resolve empty
+
+**Symptom (2026-09-13):** AI Anesthesia Assistant/Calculator loaded forever, Qbank produced the
+same 4 Parkinson's questions whatever the topic, and the user's `loading_stat` stayed `waiting`.
+
+**Root cause:** the expression `body's data:first item's content:first item's text` on the
+*List Conversation Items* result is accepted by the editor but evaluates **empty at runtime** —
+Bubble's API-connector runtime resolves one list level (`data:first item's id` works) but not a
+list nested inside a list item. Consequences:
+- *List Messages*: Basic Question created with empty content → *Done Generating* never scheduled
+  → `loading_stat` stuck `waiting`, which also blocks the Qbank "Complete Exam" view (its loader
+  shows while `loading_stat = waiting`).
+- *AI Qbank: List Messages*: the Json Converter `content` param was empty, so Bubble sent the
+  connector's **initialization sample** (4 Parkinson's questions, old schema) instead.
+
+Proved with `wf_debug_items` (exposed, token-protected): `nested` (two-level path) returns empty,
+`item_text` (via Get Conversation Item) returns the reply.
+
+**Fix (done in both List Messages workflows):** step 1 List Conversation Items → step 2
+**Get Conversation Item** (`conversation_id = Session's thread_id`,
+`item_id = Result of step 1's body's data:first item's id`) → every consumer reads
+`Result of step 2's body's content:first item's text` (Basic Question `content`, both Json
+Converter `content` params, Question Bank Session `raw_json {question}`).
+
+**Repair tool:** `wf_debug_items` (`POST /api/1.1/wf/wf_debug_items`, Bearer token) takes
+`conversation_id` (optional, debug) and `session_id` (optional): when `session_id` is given it
+re-schedules *List Messages* for that Basic Question Session, which re-reads the finished reply
+from OpenAI, creates the Basic Question and runs *Done Generating* (resets `loading_stat`).
+Used once to unstick session `1789316385802x748702025821454300`.
+
 ---
 
 ## 3. Workflow changes — DONE on branch `api-migration` (2026-09-13)
@@ -128,13 +165,15 @@ left in place for reference; only the workflows changed. Final shapes:
 - **AI Qbank: Retrieve a Run** — Retrieve a Response (response_id = run_id) → reschedule while
   `body's status is not completed` → schedule List Messages when completed → Retrieve a Run Failed /
   Terminate when status is in All ⚙️Run Failed Status.
-- **AI Qbank: List Messages** — List Conversation Items → Json Converter gets
-  `body's data:first item's content:first item's text` (no more fence stripping) → unchanged.
+- **AI Qbank: List Messages** — List Conversation Items → Get Conversation Item → Json Converter
+  (1st & 2nd) and `raw_json {question}` get `step 2's body's content:first item's text` → unchanged.
 - **AI Anesthesia: Create a Thread** — Create a conversation → set thread_id → Create a Response
   (AI Anesthesia) *only when analytic_type is AI Anesthesia* / Create a Response (Calculator) *only when
   AI Calculator* → run_id = `step A's body's id defaulting to step B's body's id` → schedule Retrieve a Run.
 - **Retrieve a Run** — Retrieve a Response; token_update uses `body's usage's total_tokens`.
-- **List Messages** — List Conversation Items → Create Basic Question (content = latest assistant text).
+- **List Messages** — List Conversation Items → Get Conversation Item → Create Basic Question
+  (content = `step 2's body's content:first item's text`); Trigger Delete if Failed also fires when
+  that content is empty.
 
 Because "Include errors in response" is on for every Response API call, all fields are under
 `'s body` (e.g. `'s body's id`, `'s body's status`) and `'s returned_an_error` / `'s error's body`
@@ -167,7 +206,7 @@ Old assistant → new call: `asst_eaXJ…` (AI Anesthesia) → Call 2, `asst_Atg
 ### `List Messages` / `AI Qbank: List Messages`
 | Step | Old | New |
 |---|---|---|
-| 0 | List Messages (thread_id) → `data:first item's content:first item's text value` | **List Conversation Items** (`conversation_id` = Session's thread_id) → `data:first item's content:first item's text` |
+| 0 | List Messages (thread_id) → `data:first item's content:first item's text value` | **List Conversation Items** → **Get Conversation Item** (`item_id` = step 1's `data:first item's id`) → `content:first item's text` (nested list paths are empty at runtime, §2a) |
 | rest | unchanged | unchanged |
 
 ---
