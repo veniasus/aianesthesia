@@ -5,7 +5,7 @@
 # "Initialize call" in the API Connector.
 #
 # Usage:
-#   scripts/openai-flow.sh tutor  "What is the max dose of bupivacaine?"
+#   scripts/openai-flow.sh assistant  "What is the max dose of bupivacaine?"
 #   scripts/openai-flow.sh qbank  "Please generate 2 questions on nitrous oxide cylinders"
 #   scripts/openai-flow.sh call <create_conversation|create_response|retrieve_response> [args]
 #
@@ -64,8 +64,8 @@ poll() { # poll RESP_ID -> prints final response JSON
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  tutor|qbank)
-    if [[ $cmd == tutor ]]; then instr="$ROOT/prompts/tutor.md"; vs=$VS_TUTOR; jm=""; else instr="$ROOT/prompts/qbank.md"; vs=$VS_QBANK; jm="$ROOT/prompts/qbank-schema.json"; fi
+  assistant|calculator|qbank)
+    if [[ $cmd == assistant ]]; then instr="$ROOT/prompts/assistant.md"; vs=$VS_TUTOR; jm=""; elif [[ $cmd == calculator ]]; then instr="$ROOT/prompts/calculator.md"; vs=$VS_TUTOR; jm=""; else instr="$ROOT/prompts/qbank.md"; vs=$VS_QBANK; jm="$ROOT/prompts/qbank-schema.json"; fi
     input="${1:?input text}"
     echo "== 1. create conversation" >&2
     conv="$(create_conversation | j 'd["id"]')"; echo "  $conv" >&2

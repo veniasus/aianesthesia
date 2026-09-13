@@ -5,7 +5,7 @@ connector `bTNor0` (Create Thread / Add Message / Create Run / Retrieve Run / Li
 Messages / Assistants) now returns 404. Separately, `mock_exam` requests the retired
 model `gpt-4-1106-preview` and the image calls request retired `dall-e-*` models.
 
-**Approach:** new API Connector **"Response API"** with 5 calls. Old connector stays
+**Approach:** new API Connector **"Response API"** with 6 calls. Old connector stays
 untouched for reference. No data-type changes: `thread_id_text` stores the
 `conv_…` id and `run_id_text` stores the `resp_…` id.
 
@@ -36,7 +36,7 @@ Constants used below:
 
 | Name | Value |
 |---|---|
-| Tutor vector store | `vs_e4vD9Nz8oAgfdVWtS2GLD3g9` ("Vector store for AI Anesthesia", 19 files) |
+| AI Anesthesia vector store (Assistant + Calculator) | `vs_e4vD9Nz8oAgfdVWtS2GLD3g9` ("Vector store for AI Anesthesia", 19 files) |
 | Qbank vector store | `vs_nXTweemTbMdrEl10x3pgirdh` ("Vector store for AI Anesthesia Qbank", 22 files) |
 | Model | `gpt-4.1` (verified; `gpt-5-mini` is a cheaper option, `gpt-5` a stronger one) |
 
@@ -50,7 +50,7 @@ Constants used below:
 - Body: `{}`
 - Initialize → returns `id` (`conv_…`). Save to `thread_id_text`.
 
-### Call 2 — `Create a Response (Tutor)`
+### Call 2 — `Create a Response (AI Anesthesia)`
 - Use as: **Action** · Data type: JSON
 - `POST https://api.openai.com/v1/responses`
 - Body:
@@ -67,11 +67,15 @@ Constants used below:
 ```
 - Parameters:
   - `conversation_id` — not private. Workflow passes `Session's thread_id`.
-  - `instructions` — **private**. Paste the one-line contents of `prompts/tutor.escaped.txt`
+  - `instructions` — **private**. Paste the one-line contents of `prompts/assistant.escaped.txt`
     (it is already JSON-escaped; do not add quotes — the body template has them).
   - `input` — not private. Workflow passes the question `:formatted as JSON-safe`
     (this adds the surrounding quotes, same as the old `Add Message` call's `question`).
 - Initialize → returns `id` (`resp_…`), `status` (`queued`). Save `id` to `run_id_text`.
+
+### Call 2b — `Create a Response (Calculator)`
+Identical to Call 2 (same vector store) but `instructions` ← `prompts/calculator.escaped.txt`.
+Used when `session's analytic_type` is **AI Calculator**; Call 2 when it is **AI Anesthesia**.
 
 ### Call 3 — `Create a Response (Qbank)`
 Same as Call 2 with the Qbank prompt, Qbank vector store, and a strict JSON schema
@@ -100,7 +104,7 @@ so the output always matches the `Objective (AI Qbank_new)` parser:
 ### Call 4 — `Retrieve a Response`
 - Use as: **Data** (or Action — matches how you used Retrieve a Run) · Data type: JSON
 - `GET https://api.openai.com/v1/responses/[response_id]`
-- Initialize with a real `resp_…` id (run `scripts/openai-flow.sh tutor "hi"` to get one).
+- Initialize with a real `resp_…` id (run `scripts/openai-flow.sh assistant "hi"` to get one).
 - Fields used: `status`, `error message`, `incomplete_details reason`.
 
 ### Call 5 — `List Conversation Items`
@@ -122,14 +126,13 @@ The six workflows keep their exact structure; only the API action and the field 
 | 0 | Create a Thread | **Create a Conversation** |
 | 3 | set `thread_id` = Thread's `id` | set `thread_id` = Conversation's `id` |
 | 4 | Add Message | **delete** (input goes into the response) |
-| 5 | Create a Run {AI Test}/{AI Qbank} | **Create a Response (Tutor / Qbank)** — `conversation_id` = Session's thread_id, `input` = the same text that went to Add Message |
-| 6 | set `run_id` = Run's `id` | set `run_id` = Response's `id` |
+| 5 | Create a Run {AI Test}/{AI Qbank} | **Create a Response (AI Anesthesia / Calculator / Qbank)** — `conversation_id` = Session's thread_id, `input` = the same text that went to Add Message. In the AI Anesthesia workflow this becomes **two** conditional steps: *(AI Anesthesia)* only when `session's analytic_type is AI Anesthesia`, *(Calculator)* only when it is `AI Calculator` — replacing the old `assistant_id` ternary. |
+| 6 | set `run_id` = Run's `id` | set `run_id` = Response's `id` (AI Anesthesia workflow: two conditional "Make changes" steps, one per response step) |
 | 7 | schedule *Retrieve a Run* | unchanged (schedule after 3–5 s) |
 | 8 | error email | update the "returned an error" conditions to point at the new steps |
 
-Note: the tutor flow chose between three assistants (`asst_eaXJ…`, `asst_Atg…`,
-`asst_w43h…`) by condition. There is now one Tutor call; if those were different
-personas, tell me what they did and I'll split the prompt.
+Old assistant → new call: `asst_eaXJ…` (AI Anesthesia) → Call 2, `asst_Atg…` (AI Calculator) → Call 2b,
+`asst_w43h…` (Qbank) → Call 3.
 
 ### `Retrieve a Run` / `AI Qbank: Retrieve a Run`
 | Step | Old | New |
@@ -159,7 +162,7 @@ personas, tell me what they did and I'll split the prompt.
 
 ## 5. Testing
 
-1. `scripts/openai-flow.sh tutor "…"` / `scripts/openai-flow.sh qbank "…"` — proves the
+1. `scripts/openai-flow.sh assistant "…"` / `scripts/openai-flow.sh qbank "…"` — proves the
    calls and prompts outside Bubble.
 2. After the connector is set up, initialize each call with the values above.
 3. In Bubble, run the exposed `create_thread` API workflow or trigger the Qbank/tutor

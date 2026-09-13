@@ -30,9 +30,11 @@ a reference copy of its schema — the app itself lives in the Bubble editor.
 ## OpenAI migration (Assistants API → Responses API)
 
 - Context and the exact Bubble connector spec: `docs/response-api-migration.md`.
-- Reconstructed system prompts: `prompts/tutor.md`, `prompts/qbank.md` (+ `.escaped.txt`
+- Reconstructed system prompts: `prompts/assistant.md`, `prompts/calculator.md`, `prompts/qbank.md` (+ `.escaped.txt`
   one-liners for pasting into the connector), strict output schema `prompts/qbank-schema.json`.
-- `scripts/openai-flow.sh tutor|qbank "<input>"` runs the same HTTP calls Bubble makes,
+- `scripts/openai-flow.sh assistant|qbank "<input>"` runs the same HTTP calls Bubble makes,
   end to end, using `OPENAI_API_KEY` from `.env`.
 - The old Assistants connector (`bTNor0`) stays in the app for reference; the new one is
   named "Response API".
+- Bubble editor edits are done via Playwright on branch **api-migration** (`version=03juz`);
+  API Connector deep links: `tab=APIConnector&api_item=<apiId>-<callId>`; Response API id is `bTSes`.
