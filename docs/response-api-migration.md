@@ -116,9 +116,31 @@ so the output always matches the `Objective (AI Qbank_new)` parser:
 
 ---
 
-## 3. Workflow changes
+## 3. Workflow changes — DONE on branch `api-migration` (2026-09-13)
 
-The six workflows keep their exact structure; only the API action and the field paths change.
+All six backend workflows were rewired in the Bubble editor (via Playwright, see
+`scripts/bubble-editor-helpers.js`). The old "Assistants API" connector and its calls are
+left in place for reference; only the workflows changed. Final shapes:
+
+- **AI Qbank: Create a Thread** — Create a conversation → (Delete/Terminate guards) → set thread_id →
+  Create a Response (Qbank) [input = Arbitrary text:formatted as JSON-safe] → set run_id → schedule
+  AI Qbank: Retrieve a Run → error email/cleanup.
+- **AI Qbank: Retrieve a Run** — Retrieve a Response (response_id = run_id) → reschedule while
+  `body's status is not completed` → schedule List Messages when completed → Retrieve a Run Failed /
+  Terminate when status is in All ⚙️Run Failed Status.
+- **AI Qbank: List Messages** — List Conversation Items → Json Converter gets
+  `body's data:first item's content:first item's text` (no more fence stripping) → unchanged.
+- **AI Anesthesia: Create a Thread** — Create a conversation → set thread_id → Create a Response
+  (AI Anesthesia) *only when analytic_type is AI Anesthesia* / Create a Response (Calculator) *only when
+  AI Calculator* → run_id = `step A's body's id defaulting to step B's body's id` → schedule Retrieve a Run.
+- **Retrieve a Run** — Retrieve a Response; token_update uses `body's usage's total_tokens`.
+- **List Messages** — List Conversation Items → Create Basic Question (content = latest assistant text).
+
+Because "Include errors in response" is on for every Response API call, all fields are under
+`'s body` (e.g. `'s body's id`, `'s body's status`) and `'s returned_an_error` / `'s error's body`
+are available — the same convention the old calls used.
+
+Original migration table (kept for reference):
 
 ### `AI Anesthesia: Create a Thread` / `AI Qbank: Create a Thread`
 | Step | Old | New |
