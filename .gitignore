@@ -3,3 +3,7 @@
 
 # Bubble app export — contains live API keys (OpenAI, Stripe, Bubble token). Never commit.
 bubble-export/
+
+# Browser-automation captures (accessibility snapshots include form values, e.g. API keys)
+.playwright-mcp/
+*-snapshot*.md
