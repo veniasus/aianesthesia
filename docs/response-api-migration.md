@@ -38,7 +38,7 @@ Constants used below:
 |---|---|
 | AI Anesthesia vector store (Assistant + Calculator) | `vs_e4vD9Nz8oAgfdVWtS2GLD3g9` ("Vector store for AI Anesthesia", 19 files) |
 | Qbank vector store | `vs_nXTweemTbMdrEl10x3pgirdh` ("Vector store for AI Anesthesia Qbank", 22 files) |
-| Model | `gpt-4.1` (verified; `gpt-5-mini` is a cheaper option, `gpt-5` a stronger one) |
+| Model | `gpt-4.1` for Assistant/Calculator; **`gpt-4.1-mini` for Qbank** (2026-09-21, ~10 s faster on the 5-question prompt; `gpt-5-mini` measured 84 s — reasoning models are too slow here) |
 
 ---
 
@@ -229,3 +229,18 @@ Old assistant → new call: `asst_eaXJ…` (AI Anesthesia) → Call 2, `asst_Atg
 3. In Bubble, run the exposed `create_thread` API workflow or trigger the Qbank/tutor
    UI on **version-test**, then inspect `question_bank_session` via
    `scripts/bubble get question_bank_session` (requires exposing that type in Settings → API).
+
+---
+
+## 6. Latency tuning (live, 2026-09-21)
+
+Measured on live: Qbank ≈ 60 s click→done (41 s OpenAI generation, 25 s first-poll delay + 10 s
+poll interval, ~10 s creating questions); Assistant ≈ 14 s, but the "Done" toast could appear
+before the reply record reached the browser (Bubble pushes server-created things with a small lag).
+
+Changes made on Main:
+- *AI Qbank: Create a Thread* → first *Retrieve a Run* at `+8 s` (was 25 s).
+- *AI Qbank: Retrieve a Run* → re-poll every `4 s` (was 10 s). Assistant already used 3 s / 4 s.
+- *List Messages* → *Done Generating* scheduled at `Current date/time + 3 s` so the Basic Question
+  is visible before `loading_stat` flips to `done`.
+- *Create a Response (Qbank)* body `model` → `gpt-4.1-mini` (re-initialized).
