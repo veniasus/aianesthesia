@@ -244,3 +244,26 @@ Changes made on Main:
 - *List Messages* → *Done Generating* scheduled at `Current date/time + 3 s` so the Basic Question
   is visible before `loading_stat` flips to `done`.
 - *Create a Response (Qbank)* body `model` → `gpt-4.1-mini` (re-initialized).
+
+## 7. Follow-up replies not appearing on live (fixed 2026-09-21)
+
+**Symptom:** on live, the first answer in a chat showed up, but follow-up answers never rendered
+until a page reload — even though the server logs showed the Basic Question created and
+*Done Generating* run. Not reproducible on version-test.
+
+**Root cause:** the chat repeating groups in `re_ai_anesthesia` (RG Basic Question, `bTNqG0`) and
+`re_ai_calculator` (RG AI Calculator, `bTPAP1`) were fed from a page-level hidden repeating group
+"List BQ" = *all* Basic Questions of the current user, passed in as the reusable's `BQ` / `AI_Cal`
+property and displayed `:filtered` by session. On live that list holds ~19,400 rows for the test
+account, and Bubble's live update of such a list never completes, so the filtered view never
+changes. version-test has far fewer rows, hence no repro there.
+
+**Fix:** both RGs now use their own search — `Do a search for Basic Questions` with
+`session = <reusable>'s chat_session`, `user = Current User`, sorted by Created Date ascending.
+Session-scoped searches have a handful of rows, so Bubble's push update is immediate. The existing
+"loading_stat = done → Display list" handler is unchanged. Verified on version-test: first reply
+16 s, follow-ups 12 s (Assistant) / 18 s (Calculator), all rendered without reload.
+
+Left as is (possible later cleanup): the page still builds the hidden 19k-row "List BQ" /
+"List BQ session" groups for the reusables' unused properties, which makes the Assistant page
+heavier than it needs to be.
