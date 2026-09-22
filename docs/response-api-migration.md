@@ -277,3 +277,44 @@ list search now carries an extra constraint `Created Date < Current date/time + 
 `Current date/time` differs on every run, the search is new each time and Bubble fetches fresh
 rows from the server. Verified on version-test (follow-up visible in 6 s); needs a deploy + live
 check.
+
+## 8. Stale rows in the chat RG while a new session's first reply loads (fixed on Main 2026-09-22)
+
+**Symptom (live):** start a new chat (the "+" icon in the History panel, workflow `bTNsb0` in
+`re_ai_anesthesia` / `bTPCw1` in `re_ai_calculator`, export key `bTMKX`), send a question, and while
+`loading_stat = waiting` the chat RG shows rows from the previous conversation; it corrects itself
+when *Done Generating* runs the "loading_stat = done → Display list" handler.
+
+**What happens:** the new-chat workflow sets `chat_session` to empty and runs *Clear list* on the RG,
+which only hides the existing cells (`display:none`) – the old rows stay in the DOM. The send
+workflow (`chat_session is empty` variants) then creates the session + Basic Question through the
+*session trigger* custom event and sets `chat_session`; from there the RG relied on its own
+data-source search re-evaluating. On live that incremental list update is unreliable (same class
+of problem as §7): the RG re-used the old cells, so the new question landed in row 1 while the
+previous conversation's reply stayed in row 2 until the Done handler's *Display list* replaced the
+list (measured on live: stale row present from ~1.8 s after send until the Done handler at ~32 s).
+
+**Fix (4 workflows, all on Main):** a new last step *Display list in RG …* whose search is the same
+shape as the Done handler's (`session = Result of step 1 (Trigger session trigger)'s current_session`,
+`Created Date < Current date/time + 1 hour` as the cache-buster) so the RG is explicitly reset to the
+new session's rows right after the session exists:
+
+| Reusable | Workflow | New step |
+|---|---|---|
+| re_ai_anesthesia | Button send clicked, `chat_session is empty` (`bTNsD0`) | step 5 `bTSic0` |
+| re_ai_anesthesia | Group suggestions clicked, `chat_session is empty` (`bTNtk0`) | step 5 `bTSie0` |
+| re_ai_calculator | Button send clicked, `chat_session is empty` (`bTPCY1`) | step 5 `bTSiu0` |
+| re_ai_calculator | Group suggestions clicked, `chat_session is empty` (`bTPDz1`) | step 5 `bTSiw0` |
+
+Issue checker: 0. Verified on version-test (Assistant and Calculator): after new chat + send, only
+the new question is visible while waiting; the reply renders via the Done handler as before.
+
+**Also observed, not changed:** clicking a conversation in the History panel (*Group Session holder
+is clicked*, `bTNtR0`) only sets `chat_session` and scrolls; on live the RG did not switch to the
+selected conversation in my test (it kept the current one). Adding the same *Display list* step
+there would make History reliable too. Separately, one Calculator request on version-test ended in
+the app's "An error occured, try again" popup (`loading_stat = failed`); in that failed state the RG
+also showed a stale row, which this change does not cover because the Done handler never runs.
+
+Runtime routes used for testing: `/index/ai_assistant`, `/index/anesthesia_calculator`
+(prefix `/version-test` for dev). Editor: Main is `version=test`; reusables need `&type=custom`.
