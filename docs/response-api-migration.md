@@ -267,3 +267,13 @@ Session-scoped searches have a handful of rows, so Bubble's push update is immed
 Left as is (possible later cleanup): the page still builds the hidden 19k-row "List BQ" /
 "List BQ session" groups for the reusables' unused properties, which makes the Assistant page
 heavier than it needs to be.
+
+**Update (2026-09-22):** the session-scoped search alone was *not* enough on live — the follow-up
+reply still only appeared after a reload (reproduced with the test account). On live, Bubble's push
+update for the new Basic Question never reaches the page, and the "loading_stat = done → Display
+list" action re-ran the *same* search, which Bubble served from its client cache. Fix: in both
+reusables' "done" workflows (`re_ai_anesthesia` bTNtd0, `re_ai_calculator` bTPDs1) the Display
+list search now carries an extra constraint `Created Date < Current date/time + 1 hour`. Because
+`Current date/time` differs on every run, the search is new each time and Bubble fetches fresh
+rows from the server. Verified on version-test (follow-up visible in 6 s); needs a deploy + live
+check.
