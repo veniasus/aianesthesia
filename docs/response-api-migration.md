@@ -294,6 +294,9 @@ of problem as §7): the RG re-used the old cells, so the new question landed in 
 previous conversation's reply stayed in row 2 until the Done handler's *Display list* replaced the
 list (measured on live: stale row present from ~1.8 s after send until the Done handler at ~32 s).
 
+> **Note (2026-09-23):** the date constraint in these four steps was removed on branch `preformance`
+> (§9); the new session's id already makes the search unique.
+
 **Fix (4 workflows, all on Main):** a new last step *Display list in RG …* whose search is the same
 shape as the Done handler's (`session = Result of step 1 (Trigger session trigger)'s current_session`,
 `Created Date < Current date/time + 1 hour` as the cache-buster) so the RG is explicitly reset to the
@@ -318,3 +321,37 @@ also showed a stale row, which this change does not cover because the Done handl
 
 Runtime routes used for testing: `/index/ai_assistant`, `/index/anesthesia_calculator`
 (prefix `/version-test` for dev). Editor: Main is `version=test`; reusables need `&type=custom`.
+
+## 9. Runaway search loop from `Current date/time` in a live search (fixed on branch `preformance`, 2026-09-23)
+
+**Symptom:** the app hit Bubble's plan limit and went offline (`bubble.io/limit_exceeded`). Workload:
+"Search for Basic Questions" = 234,367 WU / 26,226 searches (97.5 % of the month), 160k WU on 22 Sept
+alone vs ~6k the day before.
+
+**Cause:** the §7 "update" and §8 Display list searches used `Created Date < Current date/time + 1 hour`.
+A Display list source stays live, and `Current date/time` re-evaluates constantly, so Bubble issued a
+new search roughly every second for as long as a chat page stayed open. Evidence: the live network
+recording on 22 Sept showed no searches between send and reply, then one `elasticsearch/search` every
+0.7–1 s from the moment the Done handler ran.
+
+**Rule:** never put `Current date/time` in a search constraint (or anything else that stays live —
+RG data sources, Display list, element expressions). Freeze it in a custom state first.
+
+**Fix (branch `preformance`, `version=33khn`, issue checker 0):**
+- New custom state `refreshed_at` (date) on `re_ai_anesthesia` and `re_ai_calculator`.
+- Done handlers (`bTNtd0`, `bTPDs1`): new step 1 *Set state refreshed_at = Current date/time*; Display
+  list constraint is now `Created Date < <reusable>'s refreshed_at + hours: 1` (the hour absorbs
+  client/server clock skew). The key still changes once per reply, so follow-ups still fetch fresh
+  rows, but is stable in between. Step order: Set state → Display list → Scroll → loading_stat = ready.
+- New-session send workflows (`bTNsD0`, `bTNtk0`, `bTPCY1`, `bTPDz1`): date constraint removed;
+  step 5 searches only `session = Result of step 1's current_session`.
+
+**Not yet verified at runtime** — every version of the app redirected to the limit page when this
+was built. Check after the app relaunches: open a chat, send, and confirm in DevTools → Network that
+`elasticsearch/search` requests stop after the reply lands; then send a follow-up and confirm it
+renders without reload.
+
+Remaining optimisation backlog (see the 2026-09-23 review): remove the index header "List …" groups
+(admins load entire tables), use server-side `:count` for the review-popup triggers, give History /
+Qbank history their own scoped searches, replace per-cell answer-option searches with the question's
+options list, add user constraints to Notes searches, and drop OpenAI run polling.
