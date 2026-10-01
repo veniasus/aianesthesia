@@ -346,7 +346,13 @@ RG data sources, Display list, element expressions). Freeze it in a custom state
 - New-session send workflows (`bTNsD0`, `bTNtk0`, `bTPCY1`, `bTPDz1`): date constraint removed;
   step 5 searches only `session = Result of step 1's current_session`.
 
-**Not yet verified at runtime** — every version of the app redirected to the limit page when this
+**Verified in the served runtime bundle (2026-10-01):** a headless load of `/version-33khn/index/ai_assistant`
+shows all six workflows as intended (Done handlers: SetCustomState `refreshed_at_ = Current Date/Time` →
+DisplayListData whose search uses `refreshed_at` and no Current Date/Time; new-session steps: no date
+constraint). Main (`version-test`) and live still serve the old `Current date/time` searches in all six.
+Script: load the page with Playwright, collect `/package/` responses, find each workflow object by id.
+
+**Still to verify with a logged-in session** — every version of the app redirected to the limit page when this
 was built. Check after the app relaunches: open a chat, send, and confirm in DevTools → Network that
 `elasticsearch/search` requests stop after the reply lands; then send a follow-up and confirm it
 renders without reload.
