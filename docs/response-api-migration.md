@@ -322,42 +322,41 @@ also showed a stale row, which this change does not cover because the Done handl
 Runtime routes used for testing: `/index/ai_assistant`, `/index/anesthesia_calculator`
 (prefix `/version-test` for dev). Editor: Main is `version=test`; reusables need `&type=custom`.
 
-## 9. Runaway search loop from `Current date/time` in a live search (fixed on branch `preformance`, 2026-09-23)
+## 9. Workload spike that took the app offline (22 Sept 2026) — corrected diagnosis 2026-10-01
 
 **Symptom:** the app hit Bubble's plan limit and went offline (`bubble.io/limit_exceeded`). Workload:
-"Search for Basic Questions" = 234,367 WU / 26,226 searches (97.5 % of the month), 160k WU on 22 Sept
-alone vs ~6k the day before.
+"Search for Basic Questions" = 234,367 WU / 26,226 searches (97.5 % of the month), 160k WU on 22 Sept.
 
-**Cause:** the §7 "update" and §8 Display list searches used `Created Date < Current date/time + 1 hour`.
-A Display list source stays live, and `Current date/time` re-evaluates constantly, so Bubble issued a
-new search roughly every second for as long as a chat page stayed open. Evidence: the live network
-recording on 22 Sept showed no searches between send and reply, then one `elasticsearch/search` every
-0.7–1 s from the moment the Done handler ran.
+**Actual cause (verified 2026-10-01 in a headless browser, logged in as the test account on Main):**
+the test account `sagevenia+ai@gmail.com` is an **admin**. For admins, the hidden index-header group
+"List BQ" (`bTRVg`) searches *all* Basic Questions in the app, with no user constraint, and renders every row.
+- On page load the chat page downloaded 661 Basic Questions from 15 users / 124 sessions (400-row pages).
+- Every time a Basic Question is created (each question and each reply), Bubble re-downloads the whole
+  list again: 400 + 263 rows on dev after one message.
+- On live that list held 19,451 rows on 22 Sept, so each refresh is ~49 sequential 400-row requests.
+  That is the back-to-back "search after previous response" pattern in the 22 Sept recording, and it
+  repeats for every message while an admin has a chat page open.
+- After §7 the chat RGs use their own session search, so List BQ (param `BQ` / `AI_Cal` on the
+  reusables) feeds nothing; it is pure cost.
 
-**Rule:** never put `Current date/time` in a search constraint (or anything else that stays live —
-RG data sources, Display list, element expressions). Freeze it in a custom state first.
+**Earlier hypothesis, disproven:** §9 previously blamed `Created Date < Current date/time + 1 hour` in the
+Display list searches for a once-per-second loop. A control run on Main (which still has that
+constraint) showed **zero** search requests in the 30 s after each reply, so that was not the loop.
 
-**Fix (branch `preformance`, `version=33khn`, issue checker 0):**
-- New custom state `refreshed_at` (date) on `re_ai_anesthesia` and `re_ai_calculator`.
-- Done handlers (`bTNtd0`, `bTPDs1`): new step 1 *Set state refreshed_at = Current date/time*; Display
-  list constraint is now `Created Date < <reusable>'s refreshed_at + hours: 1` (the hour absorbs
-  client/server clock skew). The key still changes once per reply, so follow-ups still fetch fresh
-  rows, but is stable in between. Step order: Set state → Display list → Scroll → loading_stat = ready.
-- New-session send workflows (`bTNsD0`, `bTNtk0`, `bTPCY1`, `bTPDz1`): date constraint removed;
-  step 5 searches only `session = Result of step 1's current_session`.
+**Branch `preformance` (`version=33khn`) — what it contains and how it tested:**
+- `refreshed_at` custom state on both chat reusables; Done handlers set it first and the Display list
+  search uses `refreshed_at + 1 hour` instead of `Current date/time + 1 hour`; the four new-session
+  Display list steps have no date constraint. Harmless, and confirmed present in the served bundle.
+- Browser test on the branch (Assistant and Calculator): new chat → reply rendered in 9–16 s, follow-up
+  rendered without reload in 9–12 s, no stale rows, 0 search requests in the 30 s after each reply.
+  The same is true on Main, so this change does **not** reduce workload by itself.
 
-**Verified in the served runtime bundle (2026-10-01):** a headless load of `/version-33khn/index/ai_assistant`
-shows all six workflows as intended (Done handlers: SetCustomState `refreshed_at_ = Current Date/Time` →
-DisplayListData whose search uses `refreshed_at` and no Current Date/Time; new-session steps: no date
-constraint). Main (`version-test`) and live still serve the old `Current date/time` searches in all six.
-Script: load the page with Playwright, collect `/package/` responses, find each workflow object by id.
+**Fix that actually removes the spike (not yet done — needs the editor):** remove the data source of
+the index header "List BQ" group (or delete the group and the reusables' `BQ` / `AI_Cal` params).
+Then re-run the capture: after sending a message there should be no 400-row Basic Question pages.
+Next in line: the admin branch of "List BQ_Session" (all sessions in the app, feeds the History panel)
+and "List QB Session"; give those consumers their own `user = Current User` searches.
 
-**Still to verify with a logged-in session** — every version of the app redirected to the limit page when this
-was built. Check after the app relaunches: open a chat, send, and confirm in DevTools → Network that
-`elasticsearch/search` requests stop after the reply lands; then send a follow-up and confirm it
-renders without reload.
-
-Remaining optimisation backlog (see the 2026-09-23 review): remove the index header "List …" groups
-(admins load entire tables), use server-side `:count` for the review-popup triggers, give History /
-Qbank history their own scoped searches, replace per-cell answer-option searches with the question's
-options list, add user constraints to Notes searches, and drop OpenAI run polling.
+**How to verify like this:** `chrome-headless-shell-1228` + the npx Playwright package; log in on
+`/version-…/index/login`, listen to `elasticsearch/search` responses and summarise `hits.hits[]._source`
+by `_type`, `user_user`, `session_custom_session`. Request bodies are encrypted; responses are not.
