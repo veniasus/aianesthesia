@@ -351,9 +351,21 @@ constraint) showed **zero** search requests in the 30 s after each reply, so tha
   rendered without reload in 9–12 s, no stale rows, 0 search requests in the 30 s after each reply.
   The same is true on Main, so this change does **not** reduce workload by itself.
 
-**Fix that actually removes the spike (not yet done — needs the editor):** remove the data source of
-the index header "List BQ" group (or delete the group and the reusables' `BQ` / `AI_Cal` params).
-Then re-run the capture: after sending a message there should be no 400-row Basic Question pages.
+**Fix that removes the spike — DONE on branch `preformance` (2026-10-01):** deleted both conditionals
+on the index header "List BQ" (`bTRVg`), which were its only data source:
+- admin: `URL item #2 is AI Assistant's name or … Anesthesia Calculator's name and Current User's user_role is admin` → `Search for Basic Questions` (no constraints, Created Date desc)
+- customer: same URL test `and user_role is customer` → `Search for Basic Questions (user = Current User)`, Created Date desc
+Nothing reads the list (the reusables' `BQ` / `AI_Cal` params are passed but unused since §7). Issue checker 0.
+
+Browser verification, logged in as the admin test account (dev data, 30 s windows):
+
+| | Main (control) | Branch |
+|---|---|---|
+| Basic Question rows downloaded on chat page load | 661 (15 users) | 0 |
+| Basic Question rows downloaded per message | 663 (400 + 263) | 3 (session only) |
+| Assistant / Calculator reply + follow-up render | OK | OK (8–13 s), no reload |
+
+On live the same change removes ~19,400 rows per page load and per message for admin accounts.
 Next in line: the admin branch of "List BQ_Session" (all sessions in the app, feeds the History panel)
 and "List QB Session"; give those consumers their own `user = Current User` searches.
 
