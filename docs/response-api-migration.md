@@ -372,3 +372,36 @@ and "List QB Session"; give those consumers their own `user = Current User` sear
 **How to verify like this:** `chrome-headless-shell-1228` + the npx Playwright package; log in on
 `/version-…/index/login`, listen to `elasticsearch/search` responses and summarise `hits.hits[]._source`
 by `_type`, `user_user`, `session_custom_session`. Request bodies are encrypted; responses are not.
+
+### 9a. Live check after the 2026-10-01 deploy, and the first-reply regression it found
+
+Live (deploy "optimaz 0.1"), admin test account:
+- Basic Question rows downloaded on chat page load: **0** (was ~19,400); per message: 1–3.
+- Follow-up replies render in 8–11 s without reload.
+- **Regression:** the first reply in a *new* chat took 80–100 s. Trace: "Done generating" at 17 s, the
+  Done handler ran, but **no search request** followed; the reply only arrived via Bubble's realtime
+  push at 97 s.
+
+**Cause:** the 2026-09-23 change removed the date constraint from the new-session Display list step,
+leaving `session = new session` (unbounded). The Done handler's search
+`session = chat_session, Created Date < refreshed_at + 1 h` is a *subset* of that, so Bubble answered it
+from the already-loaded (stale) unbounded result and never asked the server. Follow-ups worked because
+the previous search had an earlier bound, making the new one wider. On dev the realtime push arrives in
+seconds, which hid the problem there.
+
+**Fix (branch `preformance`, issue checker 0):** in the four new-session workflows (`bTNsD0`, `bTNtk0`,
+`bTPCY1`, `bTPDz1`) the old step 5 is replaced by copies of the Done handler's two steps:
+5 *Set refreshed_at = Current date/time*, 6 *Display list* with
+`session = <reusable>'s chat_session, Created Date < refreshed_at + hours: 1` (chat_session is set in step 3).
+Every later Done search therefore has a later bound and must go to the server.
+
+**Branch verification:** first-message trace shows the Done handler's search (`basic_question 2/2`) at
+13.5 s, right after the toast. Assistant and Calculator first replies 7–12 s, follow-ups 9–24 s,
+exactly one search after each reply (the Done fetch), no loop.
+
+**Rule learned:** in Bubble, a later Display list / search that is a strict subset of a fully loaded
+earlier search may be served from the client copy. When refreshing on purpose, make the new search
+*wider* (e.g. a later upper time bound), never narrower.
+
+Still open: "List BQ_Session" (`bTRVa`) loads all 4,952 sessions in the app for admins on every chat
+page load (13 × 400-row requests, ~10 s) and feeds the History panel and the review-sheet trigger.
