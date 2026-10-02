@@ -406,3 +406,25 @@ earlier search may be served from the client copy. When refreshing on purpose, m
 
 Still open: "List BQ_Session" (`bTRVa`) loads all 4,952 sessions in the app for admins on every chat
 page load (13 × 400-row requests, ~10 s) and feeds the History panel and the review-sheet trigger.
+
+### 9b. History selection stuck on the last chat (fixed on Main 2026-10-02)
+
+**Symptom (live):** after sending any message in a visit, picking another conversation in History
+(Assistant or Calculator) kept showing the last chat.
+
+**Cause:** *Group Session holder is clicked* (`bTNtR0` in `re_ai_anesthesia`, `bTPDg1` in
+`re_ai_calculator`) only set `chat_session`, scrolled and updated the URL. The chat RG follows
+`chat_session` through its own data source only until a *Display list* runs on it; from then on it
+shows the displayed list. Since §7/§8 every reply and every new chat runs a Display list, so after
+the first message History clicks changed `chat_session` but not the screen. (On a fresh page the
+switch worked.)
+
+**Fix:** both History click workflows now run, in order: Set chat_session → Set refreshed_at =
+Current date/time → Display list (`session = chat_session, Created Date < refreshed_at + 1 h`, copied
+from the Done handler) → Scroll → Trigger_Nav. Issue checker 0.
+
+**Verified on version-test:** fresh page switches; after sending a message, switching between three
+other conversations shows each one (Assistant and Calculator).
+
+**Rule:** once anything uses *Display list* on a repeating group, every action that should change what
+it shows must also use *Display list*; the RG's own data source no longer applies.
