@@ -451,3 +451,16 @@ thread_id with the new `conv_…` id, so later messages reuse it. Steps 2/3 (ter
 answer in a reopened pre-migration chat has no memory of it (test reply: "Please provide the specific
 topic or previous chat…"). Carrying context over would mean sending the session's earlier Basic
 Questions as part of the first `input`.
+
+**Live check (2026-10-02, after deploy):** oldest Assistant chat "MS Med & Anesthetic Avoidance" and
+oldest Calculator chat "Blood Loss Limit" — follow-ups answered in 15 s, no error popup.
+
+### Open: chat titles are regenerated on every reply
+
+*Done Generating* step 1 (Generate Title) runs `Only when session's title is empty or QB Session's
+title is empty`. For a chat, `QB Session` is empty, so the second half is always true and the title
+call runs on every reply; step 2 then overwrites the chat title (it has no "title is empty" check).
+Seen on live: "Propofol Overview" → "Old Chat Summary Test" after one follow-up. Pre-existing logic
+(same in the 2026-09-13 export); visible again now that titles work. Suggested fix: step 1
+`(session is not empty and session's title is empty) or (QB Session is not empty and QB Session's title
+is empty)`, and add `session's title is empty` to step 2. Also saves one OpenAI call per follow-up.
