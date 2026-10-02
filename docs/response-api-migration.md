@@ -455,7 +455,7 @@ Questions as part of the first `input`.
 **Live check (2026-10-02, after deploy):** oldest Assistant chat "MS Med & Anesthetic Avoidance" and
 oldest Calculator chat "Blood Loss Limit" — follow-ups answered in 15 s, no error popup.
 
-### Open: chat titles are regenerated on every reply
+### Chat titles were regenerated on every reply (fixed on Main 2026-10-02)
 
 *Done Generating* step 1 (Generate Title) runs `Only when session's title is empty or QB Session's
 title is empty`. For a chat, `QB Session` is empty, so the second half is always true and the title
@@ -464,3 +464,9 @@ Seen on live: "Propofol Overview" → "Old Chat Summary Test" after one follow-u
 (same in the 2026-09-13 export); visible again now that titles work. Suggested fix: step 1
 `(session is not empty and session's title is empty) or (QB Session is not empty and QB Session's title
 is empty)`, and add `session's title is empty` to step 2. Also saves one OpenAI call per follow-up.
+
+**Applied:** step 1 Only when = `session is not empty and session's title is empty or QB Session is not
+empty and QB Session's title is empty` (Bubble evaluates left to right; all four chat/exam × empty/set
+cases give the intended result). Step 2/3 unchanged — they already require step 1 to have returned
+choices, so they skip whenever step 1 skips. Issue checker 0. Verified on version-test: new chat titled
+"Etomidate Induction Dose" kept that title after an unrelated follow-up; a new quiz still got its title.
