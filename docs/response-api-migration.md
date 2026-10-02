@@ -428,3 +428,26 @@ other conversations shows each one (Assistant and Calculator).
 
 **Rule:** once anything uses *Display list* on a repeating group, every action that should change what
 it shows must also use *Display list*; the RG's own data source no longer applies.
+
+### 9c. Follow-ups in pre-migration chats failed with "Expected an ID that begins with 'conv'" (fixed on Main 2026-10-02)
+
+**Symptom:** "Create a Thread Error" emails, e.g. session `1726091944647x258713838136852480`:
+`Invalid 'conversation': 'thread_TJWP…'. Expected an ID that begins with 'conv'.` Surfaced once History
+switching worked (§9b) and users reopened old chats.
+
+**Cause:** *AI Anesthesia: Create a Thread* (`bTNpy0`, used by Assistant and Calculator) only created a
+conversation when `session's thread_id is empty`. Sessions from before the 2026-09-13 migration still
+hold an Assistants `thread_…` id, so step 1 was skipped and Create a Response sent that id as
+`conversation`.
+
+**Fix:** step 1 *Create a conversation* — Only when
+`session's thread_id is empty or session's thread_id doesn't contain "conv_"`. Step 4 then overwrites
+thread_id with the new `conv_…` id, so later messages reuse it. Steps 2/3 (terminate guards) unchanged.
+
+**Verified on version-test:** oldest Assistant chat in History ("MS and Meds"), follow-up → reply in
+16 s, no error popup, message count 16 → 18.
+
+**Limitation:** the new conversation does not contain the old Assistants-thread messages, so the first
+answer in a reopened pre-migration chat has no memory of it (test reply: "Please provide the specific
+topic or previous chat…"). Carrying context over would mean sending the session's earlier Basic
+Questions as part of the first `input`.
